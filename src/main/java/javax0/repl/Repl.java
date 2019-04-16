@@ -26,6 +26,9 @@ public class Repl implements Runnable {
     private Consumer<CommandEnvironment> stateReporter;
     private Function<CommandEnvironment, Boolean> allowExit;
 
+    /**
+     * Create a new object that already has the built-in commands configured.
+     */
     public Repl() {
         command(start().kw("alias")
             .usage("alias myalias command")
@@ -40,7 +43,7 @@ public class Repl implements Runnable {
         ).command(start().kw("help")
             .parameters(Set.of())
             .usage("help")
-                .help("")
+            .help("")
             .executor(this::helpCommand)
         );
     }
@@ -79,11 +82,25 @@ public class Repl implements Runnable {
         }
     }
 
+    /**
+     * Switch the Repl into debug mode. In this mode the exceptions are printed to the screen including the stack trace.
+     * In non-debug mode only a short information is printed about exceptions that happen during command execution but
+     * the code details are not displayed.
+     * @return this
+     */
     public Repl debug() {
         debugMode = true;
         return this;
     }
 
+    /**
+     * Define a command. The command has to be specified in the form of a builder which is implemented in the
+     * {@link CommandDefinitionBuilder} and which implements fluent API to ease the definition of commands.
+     * Note that the final {@link CommandDefinitionBuilderReady#build()} method should not be invoked. It will
+     * be invoked here by the method.
+     * @param builder the builder that is ready for the building.
+     * @return this
+     */
     public Repl command(CommandDefinitionBuilderReady builder) {
         final var def = builder.build();
         for (final var cd : commandDefinitions) {
@@ -96,6 +113,13 @@ public class Repl implements Runnable {
         return this;
     }
 
+    /**
+     * Pass the arguments to the application from the OS command line.
+     *
+     * @param args the arguments that the application should see as it was passed on the command line by the user as
+     *             the repl application was started
+     * @return this
+     */
     public Repl args(String[] args) {
         this.args = args;
         return this;
@@ -123,7 +147,7 @@ public class Repl implements Runnable {
 
     private void exitCommand(CommandEnvironment env) {
         if (allowExit != null && !allowExit.apply(env)) {
-            if (env.parser().get("confirm", Set.of("yes")) != null) {
+            if (env.parser().get("confirm", Set.of("yes")).isPresent()) {
                 shouldExit.set(true);
             } else {
                 env.message().warning("There is unsaved state in the application. Use 'exit confirm=yes'");
@@ -135,13 +159,13 @@ public class Repl implements Runnable {
 
     private void helpCommand(CommandEnvironment env) {
         final var w = env.console().writer();
-        if (env.parser().get(0) != null) {
-            final var command = env.parser().get(0);
+        if (env.parser().get(0).isPresent()) {
+            final var command = env.parser().get(0).get();
             if (aliases.containsKey(command.toLowerCase())) {
                 w.print(command + " is an alias of " + aliases.get(command.toLowerCase()) + "\n");
                 return;
             }
-            final var fakeEnv = new ReplCommandEnvironment();
+            final var fakeEnv = new ReplCommandEnvironment(this);
             keywordAndLine(fakeEnv, command);
             final var cd = getCommand(fakeEnv);
             if (cd == null) {
@@ -171,24 +195,51 @@ public class Repl implements Runnable {
         w.flush();
     }
 
+    /**
+     * Define a new alias
+     * @param alias the name of the alias the user can later use
+     * @param command the command that the alias means
+     * @return this
+     */
     public Repl alias(String alias, String command) {
-        aliases.put(alias, command);
+        if (command == null) {
+            aliases.remove(alias);
+        } else {
+            aliases.put(alias, command);
+        }
         return this;
     }
 
+    /**
+     * Define a command, which is started after each configured command execution. This command can use the environment
+     * console to output information about the state of the application.
+     * @param stateReporter the command implementation
+     * @return this
+     */
     public Repl stateReporter(Consumer<CommandEnvironment> stateReporter) {
         this.stateReporter = stateReporter;
         return this;
     }
 
+    /**
+     * Define an allow exit function. The allow exit function is consulted by the repl application when the user types
+     * {@code exit}. A {@code true} value from the function will signal the application that there is no problem exiting
+     * from the application. The function should veto the exiting in case there is some unsaved data. The function
+     * may also save the data and then signal {@code true}. If the return value of the function is {@code false} then
+     * the application will not exit unless the user specified the {@code confirm=yes} parameter. If this parameter
+     * is specified the function is still consulted but its veto (a.k.a. the returned {@code false} value) is ignored
+     * and the application will exit.
+     * @param allowExit the function that implements the unsaved resource checking and vetoing
+     * @return this
+     */
     public Repl allowExit(Function<CommandEnvironment, Boolean> allowExit) {
         this.allowExit = allowExit;
         return this;
     }
 
     private void aliasCommand(CommandEnvironment env) {
-        final var alias = env.parser().get(0);
-        final var command = env.parser().get(1);
+        final var alias = env.parser().get(0).orElse(null);
+        final var command = env.parser().get(1).orElse(null);
         alias(alias, command);
         env.message().info(alias + " was set to alias " + command);
     }
@@ -225,16 +276,29 @@ public class Repl implements Runnable {
         return this;
     }
 
+    /**
+     * Define the prompt that the user will see in the
+     * @param prompt the text of the prompt
+     * @return this
+     */
     public Repl prompt(String prompt) {
         this.prompt = prompt;
         return this;
     }
 
+    /**
+     * Define the name of the startup file that is executed when the applicatoin starts to run.
+     * @param startupFile the name of the file
+     * @return this
+     */
     public Repl startup(String startupFile) {
         this.startupFile = startupFile;
         return this;
     }
 
+    /**
+     * Run the application.
+     */
     public void run() {
         final LocalConsole console = getConsole();
         final var w = console.writer();
@@ -302,7 +366,7 @@ public class Repl implements Runnable {
     }
 
     private void execute(String line, LocalConsole console) {
-        final var env = new ReplCommandEnvironment();
+        final var env = new ReplCommandEnvironment(this);
         env.message = message;
         final String trimmedLine = line.trim();
         if (trimmedLine.length() == 0) {

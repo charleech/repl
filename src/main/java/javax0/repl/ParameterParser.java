@@ -2,6 +2,9 @@ package javax0.repl;
 
 import java.util.*;
 
+/**
+ * A parameter parser that is to parse the command line and after that to query the command parameters.
+ */
 public class ParameterParser {
 
     private final Map<String, String> keys = new HashMap<>();
@@ -75,37 +78,41 @@ public class ParameterParser {
      *
      * @param key    for which we want to retrieve the value
      * @param values the possible values
-     * @return the value found from the set
+     * @return the optional value found from the set or {@code Optional.empty()} if the parameter
+     * was not present on the command
      */
-    public String get(String key, Set<String> values) {
-        if (get(key) == null) {
-            return null;
+    public Optional<String> get(String key, Set<String> values) {
+        final var value = get(key);
+        if (value.isEmpty()) {
+            return Optional.empty();
+        } else {
+            return Optional.ofNullable(findIt(value.get(), values));
         }
-        return findIt(get(key), values);
     }
 
     /**
      * Get the value that was associated with the key on the parsed line.
      *
      * @param key the full key as it was defined in the possible keys set
-     * @return the value as it was on the line or {@code null} in case the key was not present on the line
+     * @return the optional value as it was on the line or {@code Optional.empty()}
+     * in case the key was not present on the line
      */
-    public String get(String key) {
-        return keys.get(key);
+    public Optional<String> get(String key) {
+        return Optional.ofNullable(keys.get(key));
     }
 
     /**
      * Get the {@code i}-th parameter (starting with 0) from the parsed line. In case {@code i} is larger than
-     * the index of the last parameter {@code null} is returned.
+     * the index of the last parameter {@code Optional.empty()} is returned.
      *
      * @param i index of the parameter
-     * @return the parameter from the line or {@code null} if {@code i} is too large
+     * @return the parameter from the line or {@code Optional.empty()} if {@code i} is too large
      */
-    public String get(int i) {
+    public Optional<String> get(int i) {
         if (i < values.size()) {
-            return values.get(i);
+            return Optional.ofNullable(values.get(i));
         } else {
-            return null;
+            return Optional.empty();
         }
     }
 
@@ -131,9 +138,9 @@ public class ParameterParser {
      */
     public String getOrDefault(String key, String def, Set<String> values) {
         final var value = get(key);
-        if (value == null) {
+        if (value.isEmpty()) {
             return def;
         }
-        return get(key, values);
+        return findIt(value.get(), values);
     }
 }
